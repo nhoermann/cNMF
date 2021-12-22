@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 import pandas as pd
 import os, errno
@@ -540,7 +542,7 @@ class cNMF():
         return(spectra, usages)
 
 
-    def run_nmf(self,
+    def factorize(self,
                 worker_i=1, total_workers=1,
                 ):
         """
@@ -573,7 +575,6 @@ class cNMF():
             (Output of ``prepare_nmf_iter_params``)
 
         """
-        self._initialize_dirs()
         run_params = load_df_from_npz(self.paths['nmf_replicate_parameters'])
         norm_counts = sc.read(self.paths['normalized_counts'])
         _nmf_kwargs = yaml.load(open(self.paths['nmf_run_parameters']), Loader=yaml.FullLoader)
@@ -596,8 +597,6 @@ class cNMF():
     def combine_nmf(self, k, remove_individual_iterations=False):
         run_params = load_df_from_npz(self.paths['nmf_replicate_parameters'])
         print('Combining factorizations for k=%d.'%k)
-
-        self._initialize_dirs()
 
         combined_spectra = None
         n_iter = sum(run_params.n_components==k)
@@ -622,15 +621,15 @@ class cNMF():
         return combined_spectra
 
 
-    def consensus(self, k, density_threshold_str='0.5', local_neighborhood_size = 0.30,show_clustering = False,
+    def consensus(self, k, density_threshold=0.5, local_neighborhood_size = 0.30,show_clustering = False,
                   skip_density_and_return_after_stats = False, close_clustergram_fig=True):
         merged_spectra = load_df_from_npz(self.paths['merged_spectra']%k)
         norm_counts = sc.read(self.paths['normalized_counts'])
 
+        density_threshold_str = str(density_threshold)
         if skip_density_and_return_after_stats:
             density_threshold_str = '2'
         density_threshold_repl = density_threshold_str.replace('.', '_')
-        density_threshold = float(density_threshold_str)
         n_neighbors = int(local_neighborhood_size * merged_spectra.shape[0]/k)
 
         # Rescale topics such to length of 1.
@@ -874,16 +873,15 @@ class cNMF():
             plt.close(fig)
 
 
-
-if __name__=="__main__":
+def main():
     """
-    Example commands for now:
+    Example commands:
 
-        output_dir="/Users/averes/Projects/Melton/Notebooks/2018/07-2018/cnmf_test/"
+        output_dir="./cnmf_test/"
 
 
         python cnmf.py prepare --output-dir $output_dir \
-           --name test --counts /Users/averes/Projects/Melton/Notebooks/2018/07-2018/cnmf_test/test_data.df.npz \
+           --name test --counts ./cnmf_test/test_data.df.npz \
            -k 6 7 8 9 --n-iter 5
 
         python cnmf.py factorize  --name test --output-dir $output_dir
@@ -904,7 +902,6 @@ if __name__=="__main__":
     parser.add_argument('command', type=str, choices=['prepare', 'factorize', 'combine', 'consensus', 'k_selection_plot'])
     parser.add_argument('--name', type=str, help='[all] Name for analysis. All output will be placed in [output-dir]/[name]/...', nargs='?', default='cNMF')
     parser.add_argument('--output-dir', type=str, help='[all] Output directory. All output will be placed in [output-dir]/[name]/...', nargs='?', default='.')
-
     parser.add_argument('-c', '--counts', type=str, help='[prepare] Input (cell x gene) counts matrix as df.npz or tab delimited text file')
     parser.add_argument('-k', '--components', type=int, help='[prepare] Numper of components (k) for matrix factorization. Several can be specified with "-k 8 9 10"', nargs='+')
     parser.add_argument('-n', '--n-iter', type=int, help='[prepare] Numper of factorization replicates', default=100)
@@ -914,12 +911,9 @@ if __name__=="__main__":
     parser.add_argument('--numgenes', type=int, help='[prepare] Number of high variance genes to use for matrix factorization.', default=2000)
     parser.add_argument('--tpm', type=str, help='[prepare] Pre-computed (cell x gene) TPM values as df.npz or tab separated txt file. If not provided TPM will be calculated automatically', default=None)
     parser.add_argument('--beta-loss', type=str, choices=['frobenius', 'kullback-leibler', 'itakura-saito'], help='[prepare] Loss function for NMF.', default='frobenius')
-    parser.add_argument('--densify', dest='densify', help='[prepare] Treat the input data as non-sparse', action='store_true', default=False)
-
-    
+    parser.add_argument('--densify', dest='densify', help='[prepare] Treat the input data as non-sparse', action='store_true', default=False) 
     parser.add_argument('--worker-index', type=int, help='[factorize] Index of current worker (the first worker should have index 0)', default=0)
-    
-    parser.add_argument('--local-density-threshold', type=str, help='[consensus] Threshold for the local density filtering. This string must convert to a float >0 and <=2', default='0.5')
+    parser.add_argument('--local-density-threshold', type=float, help='[consensus] Threshold for the local density filtering. This string must convert to a float >0 and <=2', default=0.5)
     parser.add_argument('--local-neighborhood-size', type=float, help='[consensus] Fraction of the number of replicates to use as nearest neighbors for local density filtering', default=0.30)
     parser.add_argument('--show-clustering', dest='show_clustering', help='[consensus] Produce a clustergram figure summarizing the spectra clustering', action='store_true')
 
@@ -933,7 +927,7 @@ if __name__=="__main__":
                          num_highvar_genes=args.numgenes, genes_file=args.genes_file)
 
     elif args.command == 'factorize':
-        cnmf_obj.run_nmf(worker_i=args.worker_index, total_workers=args.total_workers)
+        cnmf_obj.factorize(worker_i=args.worker_index, total_workers=args.total_workers)
 
     elif args.command == 'combine':
         cnmf_obj.combine(components=args.components)
@@ -954,3 +948,7 @@ if __name__=="__main__":
 
     elif args.command == 'k_selection_plot':
         cnmf_obj.k_selection_plot()
+
+
+if __name__=="__main__":
+    main()
